@@ -1,16 +1,17 @@
-
 use walkdir::WalkDir;
 use std::io;
 use std::fs::{self, DirEntry};
 use std::path::Path;
+use std::path::PathBuf;
 
-fn walk_dir(dir: &Path, callback: &dyn Fn(&DirEntry)) -> io::Result<()> {
+fn visit_dirs(dir: &Path, callback: &dyn Fn(&DirEntry)) -> io::Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                walk_dir(&path, cb)?;
+                visit_dirs(&path, callback)?;
+                callback(&entry);
             } else {
                 callback(&entry);
             }
@@ -18,6 +19,45 @@ fn walk_dir(dir: &Path, callback: &dyn Fn(&DirEntry)) -> io::Result<()> {
     }
     Ok(())
 }
+
+fn visit_dirs_sorted(dir: &Path, callback: &dyn Fn(&Path)) -> io::Result<()> {
+    if dir.is_dir() {
+        let dir_entries = fs::read_dir(dir)?;
+        let mut entries : Vec<PathBuf> = dir_entries
+            .filter(Result::is_ok)
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+
+        for entry in entries {
+            let path = entry.as_path();
+            if path.is_dir() {
+                visit_dirs_sorted(&path, callback)?;
+                callback(&entry);
+            } else {
+                callback(&entry);
+            }
+        }
+    }
+    Ok(())
+}
+
+
+fn print_if_file(entry: &DirEntry) {
+    let path = entry.path();
+    if !path.is_dir() {
+        println!("{}", path.to_string_lossy())
+    }
+}
+
+fn print_if_dir(entry: &DirEntry) {
+    let path = entry.path();
+    if path.is_dir() {
+        println!("{}", path.to_string_lossy())
+    }
+
+}
+
 fn main() {
     println!("Starting Asylum");
     let path = std::env::args().nth(1);
@@ -27,7 +67,11 @@ fn main() {
         None => {String::from("/home/user/a")}
     };
     let path = std::path::Path::new(&path);
-    recurse_and_rename(&path);
+    //recurse_and_rename(&path);
+
+    let result = visit_dirs(&path, &|file_or_dir| println!("{:?}", file_or_dir));
+
+    let result2 = visit_dirs_sorted(&path, &|file_or_dir| println!("{:?}",file_or_dir));
 }
 
 //struct arg_options{
