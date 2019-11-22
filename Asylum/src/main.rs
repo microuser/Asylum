@@ -1,18 +1,83 @@
-//use std::collections::HashMap;
+
+use walkdir::WalkDir;
+use std::io;
+use std::fs::{self, DirEntry};
+use std::path::Path;
+
+fn walk_dir(dir: &Path, callback: &dyn Fn(&DirEntry)) -> io::Result<()> {
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk_dir(&path, cb)?;
+            } else {
+                callback(&entry);
+            }
+        }
+    }
+    Ok(())
+}
 fn main() {
-    println!("Hello, world!");
-
-    recurse_and_rename("/a/b]/");
-
-
+    println!("Starting Asylum");
+    let path = std::env::args().nth(1);
+    let path = match path {
+        Some(x) => { x}
+        //todo remove this was for debugging
+        None => {String::from("/home/user/a")}
+    };
+    let path = std::path::Path::new(&path);
+    recurse_and_rename(&path);
 }
 
+//struct arg_options{
+
+//    bool delete_empty/_folders;
+
+//}
 
 //one part of a path, not the whole path
 fn strip_unwanted(input : &str) -> String{
 
     let mut buffer = String::with_capacity(input.len());
 
+
+
+    let white_list = [
+        'a','A',
+        'b','B',
+        'c','C',
+        'd','D',
+        'e','E',
+        'f','F',
+        'g','G',
+        'h','H',
+        'i','I',
+        'j','J',
+        'k','K',
+        'l','L',
+        'm','M',
+        'n','N',
+        'o','O',
+        'p','P',
+        'q','Q',
+        'r','R',
+        's','S',
+        't','T',
+        'u','U',
+        'v','V',
+        'w','W',
+        'x','X',
+        'y','Y',
+        'z','Z',
+        '0','1',
+        '2','3',
+        '4','5',
+        '6','7',
+        '8','9',
+        ',','.',
+        '_'
+    ];
 
     let illegals = [
         //Windows Illegals (SMB)
@@ -54,12 +119,13 @@ fn strip_unwanted(input : &str) -> String{
 
     for c in input.chars(){
         if illegals.contains(&c)  {
-            //do nothing
+            //found illegal character
         } else if replacers.contains(&c){
             buffer.push(replacer);
-        } else {
-            //cannot end in a dot or a space
+        } else if white_list.contains(&c){
             buffer.push(c); 
+        } else {
+            //found non whitelisted char
         }
     }
 
@@ -78,16 +144,76 @@ fn strip_unwanted(input : &str) -> String{
 
 }
 
-fn recurse_and_rename(file_path : &str){
+fn recurse_and_rename(base_path : &std::path::Path){
+    println!("With Base path:{}",base_path.to_string_lossy());
+    if base_path.is_dir() {
+        //for entry in std::fs::read_dir(base_path) {
+        let entries = WalkDir::new(&base_path).contents_first(true);
+        //entries.reverse();
+        for entry in  entries {
+            match entry {
+                Ok(entry) => {
+                    let dir_entry : walkdir::DirEntry = entry;
+                    //let path : std::path::Path = entry.path();
+                    let path = dir_entry.path();
+                    println!("is Dir: {}" , path.is_dir());
+                    println!("Full Path is: {}",path.display());
+                    println!("last comp: {:?}", path.components().last().expect("expected content for last") );
+                    let x = path.components().last().expect("expected content for last");
+                    //let path_string : String = match x {
+                    //    Normal(x) => x
+                    //};
+                    let filename = path.components().as_path().file_name().expect("can not self");
+                    println!("filename: {:?}", filename);
+                    let a = path.components().as_path().parent().expect("can not parent");
+                    println!("parent: {:?}", a);
 
-    let splitter = '/';
+                },
+                Err(_) => {
+                    println!("{}","skip item. Probably a premissions issue");
+                },
+            }
+            //let entry = entry.unwrap();
+            
 
-    let path_parts = file_path.split(splitter);
+            //let entry = entry?;
 
-    for path in path_parts {
-        println!("{}",strip_unwanted(path));
+        }
     }
+    println!("{}","Read dir:");
+
+//    visit_dirs(&base_path, cb);
+    let dir = base_path;
     
-
-
+    if dir.is_dir() {
+        //for entry in fs::read_dir(dir).unwrap() {
+        let mut paths: Vec<_> = fs::read_dir(dir).unwrap().map(|red| red.unwrap().path()).collect();
+        paths.sort();
+        for path in paths {
+            //let path = entry.unwrap().path();
+            if path.is_dir() {
+                println!("is dir: {}",path.display());
+            } else {
+                println!("is file: {}",path.display());
+            }
+    
+        }
+    }
 }
+
+    //let mut path_buf = std::path::PathBuf::from(file_path);
+    //for comp in path_buf.components() {
+    //    match comp {
+    //        println!("{:?}", x);
+    //    }
+    //}
+
+
+
+    //let splitter = std::path::MAIN_SEPARATOR;
+    
+    //let path_parts = file_path.split(splitter);
+
+    //for path in path_parts {
+      //  println!("{}",strip_unwanted(path));
+    //}
