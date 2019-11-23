@@ -22,8 +22,9 @@ fn visit_dirs(dir: &Path, callback: &dyn Fn(&DirEntry)) -> io::Result<()> {
 
 fn visit_dirs_sorted(dir: &Path, callback: &dyn Fn(&Path)) -> io::Result<()> {
     if dir.is_dir() {
-        let dir_entries = fs::read_dir(dir)?;
-        let mut entries : Vec<PathBuf> = dir_entries
+        //let mut dir_entries : Vec<PathBuf> = ;
+        let mut entries : Vec<PathBuf> = fs::read_dir(dir)
+            .expect("cannot read directory")
             .filter(Result::is_ok)
             .map(|e| e.unwrap().path())
             .collect();
@@ -41,7 +42,6 @@ fn visit_dirs_sorted(dir: &Path, callback: &dyn Fn(&Path)) -> io::Result<()> {
     }
     Ok(())
 }
-
 
 fn print_if_file(entry: &DirEntry) {
     let path = entry.path();
@@ -68,125 +68,258 @@ fn main() {
     };
     let path = std::path::Path::new(&path);
     //recurse_and_rename(&path);
-
-    let result = visit_dirs(&path, &|file_or_dir| println!("{:?}", file_or_dir));
-
-    let result2 = visit_dirs_sorted(&path, &|file_or_dir| println!("{:?}",file_or_dir));
+    let result = visit_dirs(
+        &path, 
+        &|file_or_dir| println!("{:?}", file_or_dir)
+    );
+    let result2 = visit_dirs_sorted(
+        &path, 
+        &|file_or_dir| println!("{:?}",file_or_dir)
+    );
 }
 
-//struct arg_options{
+fn strip_unwated(path_buf : &PathBuf, behaviors: &Behaviors) {
 
-//    bool delete_empty/_folders;
+    let mut input  = path_buf
+        .file_name()
+        .expect("path was expected")
+        .to_string_lossy();
+    
+    match strip_unwanted(&input, &behaviors) {
+        Changeable::Unchanged(outcome) => {
+           if behaviors.application_behavior.verbose {
+                println!(
+                    "VERBOSE:\t Item Unchanged: {}",
+                    outcome
+                );
+            }
+        },
+        Changeable::Changed(outcome) => {
+            let mut after : PathBuf = path_buf.to_path_buf();
+            //remove old filename
+            after.pop(); 
+            //add on new filename
+            after.push(outcome);
+            if !behaviors.application_behavior.verbose {
+                move_path(&path_buf,&after);
+            }
+            println!(
+                "mv \"{}\" \"{}\"",
+                path_buf.to_string_lossy(),
+                after.to_string_lossy(),
+            );
+            
+        },
+        Changeable::Annihilated() => {
+            println!(
+                "ERROR: Sanitization rules for {} annihilate all valid characters. Doing Nothing.", 
+                &path_buf.to_string_lossy()
+            );
+        }
+    };
+}
 
-//}
+fn move_path(from: &PathBuf, to:&PathBuf) -> Option<String> {
+    let both_directories_exist : bool = from.is_dir() && from.exists() && to.is_dir() && to.exists();
+    if both_directories_exist {
+        //TODO: both directories exist, should we merge or create a numbered instance
+        return Option::Some(String::from(""))
+    }
+    return Option::None
+
+}
+
+pub enum DirectoryConflict {
+    Enumerate,
+    Merge,
+}
+
+pub struct ConflictBehavior {
+    pub directory_conflict : DirectoryConflict,
+}
+
+impl Default for ConflictBehavior {
+    fn default() -> ConflictBehavior {
+        ConflictBehavior {
+            directory_conflict : DirectoryConflict::Merge
+        }
+    }
+}
+
+pub struct CharacterBehavior {
+    pub white_list : Vec<char>,
+    pub black_list : Vec<char>,
+    pub replacement : char,
+    pub replacables : Vec<char>,
+    pub cant_enders : Vec<char>,
+
+
+}
+
+impl Default for CharacterBehavior {
+    fn default() -> CharacterBehavior {
+        CharacterBehavior {
+            white_list : vec!
+            [
+                'a','A',
+                'b','B',
+                'c','C',
+                'd','D',
+                'e','E',
+                'f','F',
+                'g','G',
+                'h','H',
+                'i','I',
+                'j','J',
+                'k','K',
+                'l','L',
+                'm','M',
+                'n','N',
+                'o','O',
+                'p','P',
+                'q','Q',
+                'r','R',
+                's','S',
+                't','T',
+                'u','U',
+                'v','V',
+                'w','W',
+                'x','X',
+                'y','Y',
+                'z','Z',
+                '0','1',
+                '2','3',
+                '4','5',
+                '6','7',
+                '8','9',
+                ',','.',
+                '_'
+            ],
+            black_list : vec!
+            [
+                //Windows Illegals (SMB)
+                '[',
+                ']',
+                '!',
+                '\\',
+                ':',
+                '<',
+                '>',
+                '*',
+                '"',
+                ';',
+                '|',
+                ',',
+                '?',
+                //Script baddies (bash/batch)
+                '\'', //quote
+                '@',
+                '$',
+                '+',
+                '%',
+                '-',
+                '`',
+                '#',
+                '~',
+                '^',
+                '+',
+                '='
+            ],
+            replacement : '_',
+            replacables : vec!
+            [
+                //' ', //todo, make up some options switch to replace _ to with space, and visa vera
+                // TODO: or allow more CLI input for addition to replacers
+                '(',
+                ')'
+            ],
+            cant_enders : vec!
+            [
+                '.',
+                ' '
+            ],
+        }
+    }
+}
+
+pub struct ApplicationBehavior {
+    pub dry_run : bool,
+    pub verbose : bool,
+}
+
+impl Default for ApplicationBehavior {
+    fn default() -> ApplicationBehavior {
+        ApplicationBehavior {
+            dry_run : true,
+            verbose : true
+        }
+    }
+}
+
+pub struct Behaviors {
+    pub character_behavior : CharacterBehavior,
+    pub conflict_behavior : ConflictBehavior,
+    pub application_behavior : ApplicationBehavior,
+}
+
+
+
+impl Default for Behaviors {
+    fn default() -> Behaviors {
+        Behaviors {
+            conflict_behavior : ConflictBehavior::default(),
+            character_behavior : CharacterBehavior::default(),
+            application_behavior : ApplicationBehavior::default(),
+        }
+    }
+}
+
 
 //one part of a path, not the whole path
-fn strip_unwanted(input : &str) -> String{
-
+fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
     let mut buffer = String::with_capacity(input.len());
-
-
-
-    let white_list = [
-        'a','A',
-        'b','B',
-        'c','C',
-        'd','D',
-        'e','E',
-        'f','F',
-        'g','G',
-        'h','H',
-        'i','I',
-        'j','J',
-        'k','K',
-        'l','L',
-        'm','M',
-        'n','N',
-        'o','O',
-        'p','P',
-        'q','Q',
-        'r','R',
-        's','S',
-        't','T',
-        'u','U',
-        'v','V',
-        'w','W',
-        'x','X',
-        'y','Y',
-        'z','Z',
-        '0','1',
-        '2','3',
-        '4','5',
-        '6','7',
-        '8','9',
-        ',','.',
-        '_'
-    ];
-
-    let illegals = [
-        //Windows Illegals (SMB)
-        '[',
-        ']',
-        '!',
-        '\\',
-        ':',
-        '<',
-        '>',
-        '*',
-        '"',
-        ';',
-        '|',
-        ',',
-        '?',
-        //Script baddies (bash/batch)
-        '\'', //quote
-        '@',
-        '$',
-        '+',
-        '%',
-        '-',
-        '`',
-        '#',
-        '~',
-        '^',
-        '+',
-        '='
-    ];
-
-    //repalce these 
-    let replacer = '_';
-    let replacers = [
-        ' ',
-        '(',
-        ')'
-    ];
+    let mut is_dirty : bool = false;
 
     for c in input.chars(){
-        if illegals.contains(&c)  {
-            //found illegal character
-        } else if replacers.contains(&c){
-            buffer.push(replacer);
-        } else if white_list.contains(&c){
+        if behaviors.character_behavior.black_list.contains(&c)  {
+            //found illegal character, omit it
+            is_dirty = true;
+        } else if behaviors.character_behavior.replacables.contains(&c){
+            //found replacer character, using its replacement
+            is_dirty = true;
+            buffer.push(behaviors.character_behavior.replacement);
+        } else if behaviors.character_behavior.white_list.contains(&c){
+            //keep
             buffer.push(c); 
         } else {
-            //found non whitelisted char
+            //found non whitelisted char, omit it (aka replace with empty?)
+            is_dirty = true;
         }
     }
 
-    //prevent last character in filename 
-    let cant_enders = [
-        '.',
-        ' '
-    ];
+    //prevent last character in filename (windows restriction)
     //Windows file rules say can't end in space or dot
-    if let Some(x) = buffer.chars().last() {
-        if cant_enders.contains(&x) {
+    while let Some(x) = buffer.chars().last() {
+        if behaviors.character_behavior.cant_enders.contains(&x) {
+            is_dirty = true;
             buffer.pop();
         }
     }
-    buffer
 
+    
+    if is_dirty {
+        return Changeable::Changed(buffer)
+    } else {
+        return Changeable::Unchanged(buffer)
+    }
 }
+
+pub enum Changeable {
+    Changed(String),
+    Unchanged(String),
+    Annihilated(),
+}
+
 
 fn recurse_and_rename(base_path : &std::path::Path){
     println!("With Base path:{}",base_path.to_string_lossy());
@@ -227,37 +360,20 @@ fn recurse_and_rename(base_path : &std::path::Path){
     println!("{}","Read dir:");
 
 //    visit_dirs(&base_path, cb);
-    let dir = base_path;
+    //let dir = base_path;
     
-    if dir.is_dir() {
-        //for entry in fs::read_dir(dir).unwrap() {
-        let mut paths: Vec<_> = fs::read_dir(dir).unwrap().map(|red| red.unwrap().path()).collect();
-        paths.sort();
-        for path in paths {
-            //let path = entry.unwrap().path();
-            if path.is_dir() {
-                println!("is dir: {}",path.display());
-            } else {
-                println!("is file: {}",path.display());
-            }
-    
-        }
-    }
+    //if dir.is_dir() {
+    //    //for entry in fs::read_dir(dir).unwrap() {
+    //    let mut paths: Vec<_> = fs::read_dir(dir).unwrap().map(|red| red.unwrap().path()).collect();
+    //    paths.sort();
+    //    for path in paths {
+    //        //let path = entry.unwrap().path();
+    //        if path.is_dir() {
+    //            println!("is dir: {}",path.display());
+    //        } else {
+     //           println!("is file: {}",path.display());
+    //        }
+  //  
+   //     }
+    //}
 }
-
-    //let mut path_buf = std::path::PathBuf::from(file_path);
-    //for comp in path_buf.components() {
-    //    match comp {
-    //        println!("{:?}", x);
-    //    }
-    //}
-
-
-
-    //let splitter = std::path::MAIN_SEPARATOR;
-    
-    //let path_parts = file_path.split(splitter);
-
-    //for path in path_parts {
-      //  println!("{}",strip_unwanted(path));
-    //}
