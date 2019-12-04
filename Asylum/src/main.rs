@@ -1,26 +1,7 @@
-use walkdir::WalkDir;
-use std::io;
-use std::fs::{self, DirEntry};
-use std::path::Path;
+use std::fs::{self};
 use std::path::PathBuf;
 
-fn visit_dirs(dir: &Path, callback: &dyn Fn(&DirEntry)) -> io::Result<()> {
-    if dir.is_dir() {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                visit_dirs(&path, callback)?;
-                callback(&entry);
-            } else {
-                callback(&entry);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn visit_dirs_sorted(dir: &Path, callback: &dyn Fn(&Path)) -> io::Result<()> {
+fn visit_dirs_sorted(dir: &PathBuf, callback: &dyn Fn(&PathBuf), behaviors : &Behaviors)  {
     if dir.is_dir() {
         //let mut dir_entries : Vec<PathBuf> = ;
         let mut entries : Vec<PathBuf> = fs::read_dir(dir)
@@ -30,36 +11,42 @@ fn visit_dirs_sorted(dir: &Path, callback: &dyn Fn(&Path)) -> io::Result<()> {
             .collect();
         entries.sort();
 
+        if behaviors.application_behavior.verbose { println!("We found ({}) items in directory: {}", entries.len(),dir.display()); }
         for entry in entries {
-            let path = entry.as_path();
-            if path.is_dir() {
-                visit_dirs_sorted(&path, callback)?;
+            if entry.is_dir() {
+                if behaviors.application_behavior.verbose { println!("Diving deeper into: {}", entry.display());} 
+                visit_dirs_sorted(&entry, callback, behaviors);
                 callback(&entry);
             } else {
+                if behaviors.application_behavior.verbose { println!("to analyse {}: {}", if entry.is_dir() {"folder"} else {"file"}  , entry.display());}
                 callback(&entry);
             }
         }
+    } else {
+        println!("The directory does not exist: {}" , dir.display());
     }
-    Ok(())
-}
-
-fn print_if_file(entry: &DirEntry) {
-    let path = entry.path();
-    if !path.is_dir() {
-        println!("{}", path.to_string_lossy())
-    }
-}
-
-fn print_if_dir(entry: &DirEntry) {
-    let path = entry.path();
-    if path.is_dir() {
-        println!("{}", path.to_string_lossy())
-    }
-
 }
 
 fn main() {
-    println!("Starting Asylum");
+    // println!("\x1B[25m White");
+    // println!("\x1B[26m White");
+    // println!("\x1B[27m White");
+    // println!("\x1B[28m White");
+    // println!("\x1B[29m White");
+    // println!("\x1B[30m Black");
+    // println!("\x1B[31m Red");
+    // println!("\x1B[32m Green");
+    // println!("\x1B[33m Yellow");
+    // println!("\x1B[34m Blue");
+    // println!("\x1B[35m Purple");
+    // println!("\x1B[36m Cyan");
+    // println!("\x1B[37m White");
+    // println!("\x1B[38m White");
+    // println!("\x1B[39m White");
+    // println!("\x1B[40m White on Black");
+    // println!("\x1B[41m White on Red");
+    // println!("\x1B[42m White on Green");
+    //todo use that cli crate
     let path = std::env::args().nth(1);
     let path = match path {
         Some(x) => { x}
@@ -67,20 +54,23 @@ fn main() {
         None => {String::from("/home/user/a")}
     };
     let path = std::path::Path::new(&path);
-    //recurse_and_rename(&path);
-    let result = visit_dirs(
-        &path, 
-        &|file_or_dir| println!("{:?}", file_or_dir)
+    let behaviors = Behaviors::default();
+
+    visit_dirs_sorted(
+        &path.to_path_buf(), 
+        &|file_or_dir| {
+            if behaviors.application_behavior.verbose { println!("Running Callback for: {:?}",file_or_dir);}
+            strip_unwated(file_or_dir, &behaviors);
+        },
+        &behaviors
     );
-    let result2 = visit_dirs_sorted(
-        &path, 
-        &|file_or_dir| println!("{:?}",file_or_dir)
-    );
+
 }
 
 fn strip_unwated(path_buf : &PathBuf, behaviors: &Behaviors) {
 
-    let mut input  = path_buf
+    if behaviors.application_behavior.verbose { println!("strip_unwanted: {}" , path_buf.display()); }
+    let input = path_buf
         .file_name()
         .expect("path was expected")
         .to_string_lossy();
@@ -101,7 +91,7 @@ fn strip_unwated(path_buf : &PathBuf, behaviors: &Behaviors) {
             //add on new filename
             after.push(outcome);
             if !behaviors.application_behavior.verbose {
-                move_path(&path_buf,&after);
+                move_path(&path_buf,&after,&behaviors);
             }
             println!(
                 "mv \"{}\" \"{}\"",
@@ -119,15 +109,168 @@ fn strip_unwated(path_buf : &PathBuf, behaviors: &Behaviors) {
     };
 }
 
-fn move_path(from: &PathBuf, to:&PathBuf) -> Option<String> {
-    let both_directories_exist : bool = from.is_dir() && from.exists() && to.is_dir() && to.exists();
-    if both_directories_exist {
-        //TODO: both directories exist, should we merge or create a numbered instance
-        return Option::Some(String::from(""))
+pub fn move_path(from: &PathBuf, to:&PathBuf, behavior: &Behaviors)  {
+    let from_exist : bool = from.exists();
+    let to_exist : bool = to.exists();
+    
+    if from_exist && to_exist {
+        match behavior.conflict_behavior.directory_conflict {
+            DirectoryConflict::Enumerate => move_path_dir_to_dir_enumerate(from,to, behavior),
+            DirectoryConflict::Merge =>  move_path_dir_to_dir_merge(from,to, behavior),       
+        }
+    } else if  from_exist && !to_exist {
+        move_path_rename(from, to, behavior);
+    } else {
+        println!("Error, unable to find source: {}", from.display());
     }
-    return Option::None
+}
+
+fn move_path_rename(from: &PathBuf, to: &PathBuf, behaviors: &Behaviors){
+    if behaviors.application_behavior.dry_run {
+        if behaviors.application_behavior.verbose {println!("DRYRUN: renamed: '{}' to '{}'", from.display(), to.display())};
+    } else {
+        match fs::rename(from, to) {
+            Ok(_) =>  println!("Renamed: '{}' to '{}'",from.display(), to.display()),
+            Err(_) =>  println!("ERROR unable to rename: '{}' to '{}'",from.display(),to.display()),
+        }
+    }
 
 }
+
+trait StringEnumerated{
+    fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String;
+    fn trim_enumerate_file(&self, behavior: &Behaviors) -> String;
+}
+
+impl StringEnumerated for String{
+    fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String{
+        if self.len() <= 4 {
+            return String::from(self)
+        }
+        
+        let mut chars = self.chars().rev();       
+        let matches_pattern : bool = 
+            chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && ( chars.next().unwrap_or(' ') == behavior.conflict_behavior.enumerate_folder_character )
+            ;
+
+        if matches_pattern {
+            String::from(&self[..self.len()-4])
+        } else {
+            String::from(self)
+        }
+
+    }
+    fn trim_enumerate_file(&self, behavior: &Behaviors) -> String{
+        if self.len() <= 4 {
+            return String::from(self)
+        }
+        
+        let mut chars = self.chars().rev();       
+        let matches_pattern : bool = 
+            chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && ( chars.next().unwrap_or(' ') == behavior.conflict_behavior.enumerate_folder_character )
+            ;
+
+        if matches_pattern {
+            String::from(&self[..self.len()-4])
+        } else {
+            String::from(self)
+        }
+    }
+}
+
+trait EnumPathBuf{
+    fn apply_enumerate_rules(&self, behavior : &Behaviors) -> PathBuf;
+}
+
+impl EnumPathBuf for PathBuf{
+    fn apply_enumerate_rules(&self, behavior : &Behaviors) -> PathBuf{
+        let mut path_buf = self.to_owned();
+        let i : usize = 1;
+        loop { 
+            if ! path_buf.exists() { 
+                break;
+            }
+
+            path_buf.set_file_name(
+                if path_buf.is_dir() {
+                    format!(
+                        "{}{}{:03}",
+                        path_buf.file_name().expect("expected path for folder").to_string_lossy().to_string().trim_enumerate_folder(behavior),
+                        behavior.conflict_behavior.enumerate_folder_character,
+                        i,    
+                    )
+                } else {
+                    format!("{}{}{:03}.{}",
+                        path_buf.file_stem().expect("expected path for file").to_string_lossy().to_string().trim_enumerate_file(behavior),
+                        behavior.conflict_behavior.enumerate_file_character,
+                        i,
+                        path_buf.extension().unwrap_or_default().to_string_lossy()
+                    )
+                }
+            );
+        
+        };
+        path_buf
+    }
+}
+
+// fn apply_enumerate_rules(to : &PathBuf, behavior : &Behaviors) -> PathBuf {
+//     let mut path_buf = PathBuf::from(to);
+//     if ! to.exists() {
+//         return path_buf
+//     } else {
+//         let i : usize = 1;
+//         loop { 
+//             path_buf.set_file_name(
+//                 if path_buf.is_dir() {
+//                     format!(
+//                         "{}{}{:03}",
+//                         path_buf.file_name().expect("expected path for folder").to_string_lossy(),
+//                         behavior.conflict_behavior.enumerate_folder_character,
+//                         i,    
+//                     )
+//                 } else {
+//                     format!("{}{}{:03}{}",
+//                         path_buf.file_stem().expect("expected path for file").to_string_lossy(),
+//                         behavior.conflict_behavior.enumerate_file_character,
+//                         i,
+//                         path_buf.extension().unwrap_or_default().to_string_lossy()
+//                     )
+//                 }
+//             );
+                    
+//             if ! path_buf.exists() { break;}
+//         }
+//     }
+//     path_buf
+
+// }
+
+fn move_path_dir_to_dir_enumerate(from: &PathBuf, to:&PathBuf, behavior: &Behaviors) {
+    let to = to.apply_enumerate_rules(behavior);
+    match fs::rename(&from,&to){
+        Ok(()) => { 
+            //if behavior.application_behavior.verbose 
+            //{ 
+                println!("Enumerate Renamed: '{}' to '{}'", from.display(), to.display())
+            //};
+        }
+        Err(x) => { 
+            println!("Enumerate was unable to rename: '{}' '{}' : {}", &from.display(), &to.display(),x);
+        }
+    };
+}
+
+fn move_path_dir_to_dir_merge(from: &PathBuf, to:&PathBuf, behavior: &Behaviors)  {
+    unimplemented!();
+}
+
 
 pub enum DirectoryConflict {
     Enumerate,
@@ -136,12 +279,16 @@ pub enum DirectoryConflict {
 
 pub struct ConflictBehavior {
     pub directory_conflict : DirectoryConflict,
+    pub enumerate_folder_character : char,
+    pub enumerate_file_character : char
 }
 
 impl Default for ConflictBehavior {
     fn default() -> ConflictBehavior {
         ConflictBehavior {
-            directory_conflict : DirectoryConflict::Merge
+            directory_conflict : DirectoryConflict::Enumerate,
+            enumerate_folder_character : '_',
+            enumerate_file_character : '.'
         }
     }
 }
@@ -223,15 +370,15 @@ impl Default for CharacterBehavior {
                 '~',
                 '^',
                 '+',
-                '='
+                '=',
+                '(',
+                ')',
             ],
             replacement : '_',
             replacables : vec!
             [
                 //' ', //todo, make up some options switch to replace _ to with space, and visa vera
                 // TODO: or allow more CLI input for addition to replacers
-                '(',
-                ')'
             ],
             cant_enders : vec!
             [
@@ -245,13 +392,15 @@ impl Default for CharacterBehavior {
 pub struct ApplicationBehavior {
     pub dry_run : bool,
     pub verbose : bool,
+    pub debug : bool,
 }
 
 impl Default for ApplicationBehavior {
     fn default() -> ApplicationBehavior {
         ApplicationBehavior {
-            dry_run : true,
-            verbose : true
+            dry_run : false,
+            verbose : false,
+            debug : false,
         }
     }
 }
@@ -303,6 +452,8 @@ fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
         if behaviors.character_behavior.cant_enders.contains(&x) {
             is_dirty = true;
             buffer.pop();
+        } else {
+            break;
         }
     }
 
@@ -318,62 +469,4 @@ pub enum Changeable {
     Changed(String),
     Unchanged(String),
     Annihilated(),
-}
-
-
-fn recurse_and_rename(base_path : &std::path::Path){
-    println!("With Base path:{}",base_path.to_string_lossy());
-    if base_path.is_dir() {
-        //for entry in std::fs::read_dir(base_path) {
-        let entries = WalkDir::new(&base_path).contents_first(true);
-        //entries.reverse();
-        for entry in  entries {
-            match entry {
-                Ok(entry) => {
-                    let dir_entry : walkdir::DirEntry = entry;
-                    //let path : std::path::Path = entry.path();
-                    let path = dir_entry.path();
-                    println!("is Dir: {}" , path.is_dir());
-                    println!("Full Path is: {}",path.display());
-                    println!("last comp: {:?}", path.components().last().expect("expected content for last") );
-                    let x = path.components().last().expect("expected content for last");
-                    //let path_string : String = match x {
-                    //    Normal(x) => x
-                    //};
-                    let filename = path.components().as_path().file_name().expect("can not self");
-                    println!("filename: {:?}", filename);
-                    let a = path.components().as_path().parent().expect("can not parent");
-                    println!("parent: {:?}", a);
-
-                },
-                Err(_) => {
-                    println!("{}","skip item. Probably a premissions issue");
-                },
-            }
-            //let entry = entry.unwrap();
-            
-
-            //let entry = entry?;
-
-        }
-    }
-    println!("{}","Read dir:");
-
-//    visit_dirs(&base_path, cb);
-    //let dir = base_path;
-    
-    //if dir.is_dir() {
-    //    //for entry in fs::read_dir(dir).unwrap() {
-    //    let mut paths: Vec<_> = fs::read_dir(dir).unwrap().map(|red| red.unwrap().path()).collect();
-    //    paths.sort();
-    //    for path in paths {
-    //        //let path = entry.unwrap().path();
-    //        if path.is_dir() {
-    //            println!("is dir: {}",path.display());
-    //        } else {
-     //           println!("is file: {}",path.display());
-    //        }
-  //  
-   //     }
-    //}
 }
