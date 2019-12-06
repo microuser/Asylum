@@ -220,37 +220,6 @@ impl EnumPathBuf for PathBuf{
     }
 }
 
-// fn apply_enumerate_rules(to : &PathBuf, behavior : &Behaviors) -> PathBuf {
-//     let mut path_buf = PathBuf::from(to);
-//     if ! to.exists() {
-//         return path_buf
-//     } else {
-//         let i : usize = 1;
-//         loop { 
-//             path_buf.set_file_name(
-//                 if path_buf.is_dir() {
-//                     format!(
-//                         "{}{}{:03}",
-//                         path_buf.file_name().expect("expected path for folder").to_string_lossy(),
-//                         behavior.conflict_behavior.enumerate_folder_character,
-//                         i,    
-//                     )
-//                 } else {
-//                     format!("{}{}{:03}{}",
-//                         path_buf.file_stem().expect("expected path for file").to_string_lossy(),
-//                         behavior.conflict_behavior.enumerate_file_character,
-//                         i,
-//                         path_buf.extension().unwrap_or_default().to_string_lossy()
-//                     )
-//                 }
-//             );
-                    
-//             if ! path_buf.exists() { break;}
-//         }
-//     }
-//     path_buf
-
-// }
 
 fn move_path_dir_to_dir_enumerate(from: &PathBuf, to:&PathBuf, behavior: &Behaviors) {
     let to = to.apply_enumerate_rules(behavior);
