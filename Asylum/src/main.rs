@@ -1,5 +1,89 @@
+extern crate clap;
+
 use std::fs::{self};
 use std::path::PathBuf;
+use clap::App;
+use clap::Arg;
+//use clap::SubCommand;
+
+fn main() {
+
+    let cli_args : clap::ArgMatches = App::new("Asylum")
+    .version("1.0")
+    .author("Microuser <microuser@users.noreply.github.com>")
+    .about("Sanitizes files and folders names")
+    .arg(Arg::with_name("path")
+        .long("path")
+        .short("p")
+        .help("path of files or folders to clean")
+        //.required(true)
+        .index(1)
+        .multiple(true)
+    )
+    .arg(Arg::with_name("dryrun")
+        .long("dryrun")
+        .short("d")
+        .help("Only print actions without touching the disk")
+        .multiple(false)
+    )
+    .arg(Arg::with_name("verbose")
+        .help("Sets the verbosity. Use up to two.")
+        .long("verbose")
+        .short("v")
+        .multiple(true)
+    )
+    .arg(Arg::with_name("profile")
+        .help("A profile for groupings of settings for specific situations")
+        .long("profile")
+        .short("g")
+        .multiple(false)
+    )
+    .get_matches();
+    // println!("\x1B[25m White");
+    // println!("\x1B[26m White");
+    // println!("\x1B[27m White");
+    // println!("\x1B[28m White");
+    // println!("\x1B[29m White");
+    // println!("\x1B[30m Black");
+    // println!("\x1B[31m Red");
+    // println!("\x1B[32m Green");
+    // println!("\x1B[33m Yellow");
+    // println!("\x1B[34m Blue");
+    // println!("\x1B[35m Purple");
+    // println!("\x1B[36m Cyan");
+    // println!("\x1B[37m White");
+    // println!("\x1B[38m White");
+    // println!("\x1B[39m White");
+    // println!("\x1B[40m White on Black");
+    // println!("\x1B[41m White on Red");    
+    // println!("\x1B[42m White on Green");
+    //todo use that cli crate
+
+    let behaviors = Behaviors::from_args(&cli_args);
+    if behaviors.application_behavior.verbose {
+        println!("Starting Asylum with arguments: {:?}",&cli_args);
+    }
+    if behaviors.application_behavior.debug {
+        println!("Using Application Behaviors: {:?}",&behaviors);
+    }
+    if cli_args.occurrences_of("path") > 0 {   
+        let paths = cli_args.values_of("path").expect("expected content for path").map(|path_string| PathBuf::from(path_string));
+        for path in paths {
+            visit_dirs_sorted(
+                &path.to_path_buf(), 
+                &|file_or_dir| {
+                    if behaviors.application_behavior.verbose { println!("Running Callback for: {:?}",file_or_dir);}
+                    strip_unwated(file_or_dir, &behaviors);
+                },
+                &behaviors
+            );  
+        }
+    } else {
+        println!("Missing path was specified. See --help");
+        std::process::exit(1);
+    }
+
+}
 
 fn visit_dirs_sorted(dir: &PathBuf, callback: &dyn Fn(&PathBuf), behaviors : &Behaviors)  {
     if dir.is_dir() {
@@ -25,46 +109,6 @@ fn visit_dirs_sorted(dir: &PathBuf, callback: &dyn Fn(&PathBuf), behaviors : &Be
     } else {
         println!("The directory does not exist: {}" , dir.display());
     }
-}
-
-fn main() {
-    // println!("\x1B[25m White");
-    // println!("\x1B[26m White");
-    // println!("\x1B[27m White");
-    // println!("\x1B[28m White");
-    // println!("\x1B[29m White");
-    // println!("\x1B[30m Black");
-    // println!("\x1B[31m Red");
-    // println!("\x1B[32m Green");
-    // println!("\x1B[33m Yellow");
-    // println!("\x1B[34m Blue");
-    // println!("\x1B[35m Purple");
-    // println!("\x1B[36m Cyan");
-    // println!("\x1B[37m White");
-    // println!("\x1B[38m White");
-    // println!("\x1B[39m White");
-    // println!("\x1B[40m White on Black");
-    // println!("\x1B[41m White on Red");
-    // println!("\x1B[42m White on Green");
-    //todo use that cli crate
-    let path = std::env::args().nth(1);
-    let path = match path {
-        Some(x) => { x}
-        //todo remove this was for debugging
-        None => {String::from("/home/user/a")}
-    };
-    let path = std::path::Path::new(&path);
-    let behaviors = Behaviors::default();
-
-    visit_dirs_sorted(
-        &path.to_path_buf(), 
-        &|file_or_dir| {
-            if behaviors.application_behavior.verbose { println!("Running Callback for: {:?}",file_or_dir);}
-            strip_unwated(file_or_dir, &behaviors);
-        },
-        &behaviors
-    );
-
 }
 
 fn strip_unwated(path_buf : &PathBuf, behaviors: &Behaviors) {
@@ -126,7 +170,7 @@ pub fn move_path(from: &PathBuf, to:&PathBuf, behavior: &Behaviors)  {
 }
 
 fn move_path_rename(from: &PathBuf, to: &PathBuf, behaviors: &Behaviors){
-    if behaviors.application_behavior.dry_run {
+    if behaviors.application_behavior.dryrun {
         if behaviors.application_behavior.verbose {println!("DRYRUN: renamed: '{}' to '{}'", from.display(), to.display())};
     } else {
         match fs::rename(from, to) {
@@ -220,7 +264,6 @@ impl EnumPathBuf for PathBuf{
     }
 }
 
-
 fn move_path_dir_to_dir_enumerate(from: &PathBuf, to:&PathBuf, behavior: &Behaviors) {
     let to = to.apply_enumerate_rules(behavior);
     match fs::rename(&from,&to){
@@ -237,20 +280,33 @@ fn move_path_dir_to_dir_enumerate(from: &PathBuf, to:&PathBuf, behavior: &Behavi
 }
 
 fn move_path_dir_to_dir_merge(from: &PathBuf, to:&PathBuf, behavior: &Behaviors)  {
+    println!("From: {}", &from.display());
+    println!("To: {}", &to.display());
+    println!("Behaviors: {:?}", behavior.conflict_behavior.directory_conflict);
     unimplemented!();
 }
 
-
+#[derive(Debug)]
 pub enum DirectoryConflict {
     Enumerate,
     Merge,
 }
 
+#[derive(Debug)]
 pub struct ConflictBehavior {
     pub directory_conflict : DirectoryConflict,
     pub enumerate_folder_character : char,
     pub enumerate_file_character : char
 }
+
+impl ConflictBehavior {
+    fn from_args(_args : &clap::ArgMatches) -> ConflictBehavior {
+        let conflict_behavior = ConflictBehavior::default();
+        //todo here is where we insert allow difference between merge and enumerate
+        return conflict_behavior
+    }
+}
+
 
 impl Default for ConflictBehavior {
     fn default() -> ConflictBehavior {
@@ -262,14 +318,23 @@ impl Default for ConflictBehavior {
     }
 }
 
+#[derive(Debug)]
 pub struct CharacterBehavior {
     pub white_list : Vec<char>,
     pub black_list : Vec<char>,
     pub replacement : char,
     pub replacables : Vec<char>,
     pub cant_enders : Vec<char>,
+}
 
-
+impl CharacterBehavior {
+    fn from_args(_args : &clap::ArgMatches ) -> CharacterBehavior{
+        let character_behavior = CharacterBehavior::default();
+        //here is where you insert into the vectors for different behavior.character_behavior
+        //todo solve logic of which we can remove from default list
+        //todo allow some general group names
+        return character_behavior
+    }
 }
 
 impl Default for CharacterBehavior {
@@ -358,29 +423,51 @@ impl Default for CharacterBehavior {
     }
 }
 
+#[derive(Debug)]
 pub struct ApplicationBehavior {
-    pub dry_run : bool,
+    pub dryrun : bool,
     pub verbose : bool,
     pub debug : bool,
 }
 
+impl ApplicationBehavior {
+    fn from_args(args : &clap::ArgMatches ) -> ApplicationBehavior{
+        let application_behavior = ApplicationBehavior {
+            dryrun : (args.occurrences_of("dryrun") > 0),
+            verbose : (args.occurrences_of("verbose") > 0),
+            debug : (args.occurrences_of("verbose") > 1 ),
+        };
+        return application_behavior;
+    }
+}
+
+
 impl Default for ApplicationBehavior {
     fn default() -> ApplicationBehavior {
         ApplicationBehavior {
-            dry_run : false,
+            dryrun : false,
             verbose : false,
             debug : false,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct Behaviors {
     pub character_behavior : CharacterBehavior,
     pub conflict_behavior : ConflictBehavior,
     pub application_behavior : ApplicationBehavior,
 }
 
-
+impl Behaviors{
+    fn from_args(args : &clap::ArgMatches) ->  Behaviors {
+        return Behaviors {
+            application_behavior : ApplicationBehavior::from_args(&args),
+            conflict_behavior : ConflictBehavior::from_args(&args),
+            character_behavior : CharacterBehavior::from_args(&args),
+        }
+    }
+}
 
 impl Default for Behaviors {
     fn default() -> Behaviors {
@@ -399,14 +486,14 @@ fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
     let mut is_dirty : bool = false;
 
     for c in input.chars(){
-        if behaviors.character_behavior.black_list.contains(&c)  {
+        if behaviors.character_behavior.black_list.contains(&c) {
             //found illegal character, omit it
             is_dirty = true;
-        } else if behaviors.character_behavior.replacables.contains(&c){
+        } else if behaviors.character_behavior.replacables.contains(&c) {
             //found replacer character, using its replacement
             is_dirty = true;
             buffer.push(behaviors.character_behavior.replacement);
-        } else if behaviors.character_behavior.white_list.contains(&c){
+        } else if behaviors.character_behavior.white_list.contains(&c) {
             //keep
             buffer.push(c); 
         } else {
@@ -426,13 +513,13 @@ fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
         }
     }
 
-    
     if is_dirty {
         return Changeable::Changed(buffer)
     } else {
         return Changeable::Unchanged(buffer)
     }
 }
+
 
 pub enum Changeable {
     Changed(String),

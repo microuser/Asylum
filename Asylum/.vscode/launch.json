@@ -11,15 +11,15 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=Asylum",
+                    "--bin=asylum",
                     //"--package=Asylum"
                 ],
                 "filter": {
-                    "name": "Asylum",
+                    "name": "asylum",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["-path","~/a","-dryrun", "-debug", "-verbose"],
             "cwd": "${workspaceFolder}"
         },
         {
@@ -30,15 +30,15 @@
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=Asylum",
+                    "--bin=asylum",
                     //"--package=Asylum"
                 ],
                 "filter": {
-                    "name": "Asylum",
+                    "name": "asylum",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["--path","~/a","--dryrun", "--debug", "--verbose"],
             "cwd": "${workspaceFolder}"
         }
     ]
