@@ -19,7 +19,9 @@
                     "kind": "bin"
                 }
             },
-            "args": ["-path","~/a","-dryrun", "-debug", "-verbose"],
+            "args": [
+                //"-v", "--dryrun" , 
+                "/six8tb/RackCopy2019-12-05/Rack/RackMediaCinema"],
             "cwd": "${workspaceFolder}"
         },
         {
@@ -38,7 +40,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["--path","~/a","--dryrun", "--debug", "--verbose"],
+            "args": ["-vv", "--dryrun","/six8tb/RackCopy2019-12-05/Rack/RackMediaCinema"],
             "cwd": "${workspaceFolder}"
         }
     ]
