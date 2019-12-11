@@ -102,46 +102,156 @@ fn visit_dirs_sorted(dir: &PathBuf, callback: &dyn Fn(&PathBuf), behaviors : &Be
     }
 }
 
+trait StringEnumerated{
+    fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String;
+    fn trim_enumerate_file(&self, behavior: &Behaviors) -> String;
+}
+
+impl StringEnumerated for String{
+
+    
+
+    fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String{
+        if self.len() <= 4 {
+            return String::from(self)
+        }
+        
+        let mut chars = self.chars().rev();       
+        let matches_pattern : bool = 
+            chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && ( chars.next().unwrap_or(' ') == behavior.conflict_behavior.enumerate_folder_character )
+            ;
+
+        if matches_pattern {
+            String::from(&self[..self.len()-4])
+        } else {
+            String::from(self)
+        }
+
+    }
+    fn trim_enumerate_file(&self, behavior: &Behaviors) -> String{
+        if self.len() <= 4 {
+            return String::from(self)
+        }
+        
+        let mut chars = self.chars().rev();       
+        let matches_pattern : bool = 
+            chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && chars.next().unwrap_or(' ').is_numeric() 
+            && ( chars.next().unwrap_or(' ') == behavior.conflict_behavior.enumerate_folder_character )
+            ;
+
+        if matches_pattern {
+            String::from(&self[..self.len()-4])
+        } else {
+            String::from(self)
+        }
+    }
+}
+
+pub enum FileSystemNode{
+    File(String),
+    Folder(String),
+    Other(String),
+}
+
+impl FileSystemNode{
+    fn get_file_stem(path_buf : &PathBuf) -> FileSystemNode {
+        if path_buf.is_dir() {
+            FileSystemNode::Folder(
+                path_buf
+                //just this folder (no parents)
+                .file_name()
+                .expect("path was expected")
+                .to_string_lossy()
+                .into_owned()
+            )
+        } else if path_buf.is_file(){
+            //just this file with no extension (no parents)
+            FileSystemNode::File(
+                path_buf
+                .file_stem()
+                .expect("path was expected")
+                .to_string_lossy()
+                .into_owned()
+            )
+        } else {
+            FileSystemNode::Other(
+                path_buf
+                .file_name()
+                .expect("path was expected")
+                .to_string_lossy()
+                .into_owned()
+            )
+        }
+    }
+    
+    fn strip_enumeration(self : FileSystemNode, behaviors : &Behaviors) -> FileSystemNode{
+        fn string_popper(mut haystack : String, enumerate_character : char) -> String{
+            let mut has_seen_a_numeric = false;
+            //let mut chars_to_remove : usize = 0;
+            loop {
+                //pop starts from the end
+                match haystack.pop() {
+                    Some(c) => {
+                        if c.is_numeric(){
+                            has_seen_a_numeric = true;
+                            continue
+                        } else if c == enumerate_character {
+                            if ! has_seen_a_numeric {
+                                //it isn't part of the special sequence, it is just a random underscore (enumerate char)
+                                haystack.push(c);
+                            }
+                            //we know it is the perfect sequence when it ends in the right character
+                            //we break out, cause we are done
+                            break;
+                        } else {
+                            //if we dont find the perfect sequence by finding an unexpected character, then it is not the right type of ending, 
+                            //we reset chars to remove, so that the slice later will be the whole string
+                            haystack.push(c);
+                            break;
+                        }
+                    },
+                    None => {
+                        break;
+                    }
+                };
+            };
+            haystack
+        };
+        
+        //Question, it seems i have an issue of needing mutable, but yet returning a newly created. Why can't i just mutable inplace?
+        return match self {
+            FileSystemNode::File(x) => FileSystemNode::File(string_popper(x, behaviors.conflict_behavior.enumerate_file_character)),
+            FileSystemNode::Folder(x) =>  FileSystemNode::Folder(string_popper(x, behaviors.conflict_behavior.enumerate_folder_character)),
+            FileSystemNode::Other(x) => FileSystemNode::Other(string_popper(x, behaviors.conflict_behavior.enumerate_file_character)),
+        }
+        
+    }
+
+    fn unwrap(self : &FileSystemNode) -> &str{
+        match self {
+            FileSystemNode::File(x) => x,
+            FileSystemNode::Folder(x) => x,
+            FileSystemNode::Other(x) => x,
+        }
+    }
+}
+
+
+
 fn strip_unwanted_file_or_folder(path_buf : &PathBuf, behaviors: &Behaviors) {
     behaviors.print_debug(&format!("strip_unwanted: {}" , path_buf.display())); 
 
-    let input = 
-    if path_buf.is_dir() {
-        path_buf
-        .file_name()
-        .expect("path was expected")
-        .to_string_lossy()
-    } else {
-        path_buf
-        .file_stem()
-        .expect("path was expected")
-        .to_string_lossy()
-    };
-
+    let node : FileSystemNode  = FileSystemNode::get_file_stem(path_buf);
+    let node = node.strip_enumeration(behaviors);
     
-    match strip_unwanted(&input, &behaviors) {
+    match strip_unwanted(node.unwrap(), &behaviors) {
         Changeable::Unchanged(_) => {
             behaviors.print_debug(&format!("Item unchanged: {}", path_buf.display()));
-        //    if behaviors.application_behavior.debug {
-        //        //todo, can this be reduced. it seems like a lot for just debug printing
-        //        //it it is due to pathbuf
-        //         if path_buf.is_dir(){
-        //             behaviors.print_debug(&format!("Item Unchanged: {}",outcome));
-        //         } else {
-        //             //only provide the period if there is an extension
-        //             let extension = &path_buf.extension().unwrap_or_default();
-        //             let period_extension = if extension.is_empty() {
-        //                 "".to_string()
-        //             } else {
-        //                 ".".to_string() + &extension.to_string_lossy()
-        //             };
-        //             println!(
-        //                 "Item Unchanged: {}",
-        //                 outcome + &period_extension
-        //             );
-        //         }
-                
-        //     }
         },
         Changeable::Changed(outcome) => {
             let mut after : PathBuf = path_buf.to_path_buf();
@@ -201,53 +311,6 @@ fn move_path_rename(from: &PathBuf, to: &PathBuf, behaviors: &Behaviors){
         }
     }
 
-}
-
-trait StringEnumerated{
-    fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String;
-    fn trim_enumerate_file(&self, behavior: &Behaviors) -> String;
-}
-
-impl StringEnumerated for String{
-    fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String{
-        if self.len() <= 4 {
-            return String::from(self)
-        }
-        
-        let mut chars = self.chars().rev();       
-        let matches_pattern : bool = 
-            chars.next().unwrap_or(' ').is_numeric() 
-            && chars.next().unwrap_or(' ').is_numeric() 
-            && chars.next().unwrap_or(' ').is_numeric() 
-            && ( chars.next().unwrap_or(' ') == behavior.conflict_behavior.enumerate_folder_character )
-            ;
-
-        if matches_pattern {
-            String::from(&self[..self.len()-4])
-        } else {
-            String::from(self)
-        }
-
-    }
-    fn trim_enumerate_file(&self, behavior: &Behaviors) -> String{
-        if self.len() <= 4 {
-            return String::from(self)
-        }
-        
-        let mut chars = self.chars().rev();       
-        let matches_pattern : bool = 
-            chars.next().unwrap_or(' ').is_numeric() 
-            && chars.next().unwrap_or(' ').is_numeric() 
-            && chars.next().unwrap_or(' ').is_numeric() 
-            && ( chars.next().unwrap_or(' ') == behavior.conflict_behavior.enumerate_folder_character )
-            ;
-
-        if matches_pattern {
-            String::from(&self[..self.len()-4])
-        } else {
-            String::from(self)
-        }
-    }
 }
 
 trait EnumPathBuf{
@@ -390,7 +453,7 @@ impl Default for ConflictBehavior {
         ConflictBehavior {
             directory_conflict : DirectoryConflict::Enumerate,
             enumerate_folder_character : '_',
-            enumerate_file_character : '.'
+            enumerate_file_character : '_'
         }
     }
 }
