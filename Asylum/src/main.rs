@@ -578,7 +578,8 @@ impl Default for CharacterBehavior {
                 '6','7',
                 '8','9',
                 ',','.',
-                '_',' ',
+                //'_',
+                ' ',
             ],
             black_list : vec!
             [
@@ -634,6 +635,7 @@ impl Default for CharacterBehavior {
                 ('–',' '), //en-dash
                 ('—',' '), //em-dash
                 ('_',' '), //underscore
+                ('_',' '), //lookalike underscope
 
                 //grave
                 ('.',' '),
@@ -796,6 +798,7 @@ impl Default for CharacterBehavior {
                 ("(2028)".to_string(),"".to_string()),
                 ("(2029)".to_string(),"".to_string()),
                 //ownership tags
+                (".DVDScr".to_string(), "".to_string()),
                 ("BRRip".to_string(), "".to_string()),
                 ("Release-Lounge".to_string(), "".to_string()),
                 ("XviD-MAXSPEED".to_string(), "".to_string()),
@@ -817,7 +820,13 @@ impl Default for CharacterBehavior {
                 (".DD5.".to_string(), "".to_string()),
                 ("H264".to_string(), "".to_string()),
                 ("-FGT".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
+                (".dvdrip".to_string(), "".to_string()),
+                (".BRRip".to_string(), "".to_string()),
+                (".goliath".to_string(), "".to_string()),
+                ("-PLAYNOW".to_string(), "".to_string()),
+                ("-ESiR".to_string(), "".to_string()),
+                (" REPACK".to_string(), "".to_string()),
+                ("-bipolar".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
@@ -914,31 +923,68 @@ impl Default for CharacterBehavior {
                 ("-sparks".to_string(), "".to_string()),
                 ("IMAX".to_string(), "".to_string()),
                 ("HDCLUB".to_string(), "".to_string()),
+                ("iMBT".to_string(), "".to_string()),
+                ("FLEET".to_string(), "".to_string()),
+                ("ROFL".to_string(), "".to_string()),
+                ("h264".to_string(), "".to_string()),
+                (" WEB ".to_string(), "".to_string()),
+                ("USURY".to_string(), "".to_string()),
+                ("WEBRip".to_string(), "".to_string()),
+                ("LIMITED".to_string(), "".to_string()),
+                ("-limited".to_string(), "".to_string()),
+                ("-FANDANGO".to_string(), "".to_string()),
+                ("-BitMeTV".to_string(), "".to_string()),
+                ("-DEADPOOL".to_string(), "".to_string()),
+                ("-FooKaS".to_string(), "".to_string()),
+                ("-SPARKS".to_string(), "".to_string()),
+                ("-Absinth".to_string(), "".to_string()),
+                ("-CM8".to_string(), "".to_string()),
+                ("-BLOW".to_string(), "".to_string()),
+                ("-REFiNED".to_string(), "".to_string()),
+                ("-CRiSC".to_string(), "".to_string()),
+                (".xvid".to_string(), "".to_string()),
+                (".REMASTERED.".to_string(), "".to_string()),
+                ("DvDrip".to_string(), "".to_string()),
+                (".STUDIO.AUDIO".to_string(), "".to_string()),
+                (".XVID".to_string(), "".to_string()),
+                (".AC3-5.1".to_string(), "".to_string()),
+                (".HQ.Hive".to_string(), "".to_string()),
+                ("-aXXo".to_string(), "".to_string()),
+                (" FXG".to_string(), "".to_string()),
+                ("-CiNEFiLE".to_string(), "".to_string()),
+                (".V2".to_string(), "".to_string()),
+                (" aXXo".to_string(), "".to_string()),
+                ("480p".to_string(), "".to_string()),
+                ("BRRiP".to_string(), "".to_string()),
+                ("AAC".to_string(), "".to_string()),
+                ("ExtraTorrentRG".to_string(), "".to_string()),
+                ("REMASTERED".to_string(), "".to_string()),
+                ("HQ Hive".to_string(), "".to_string()),
+                ("CiNEFiLE".to_string(), "".to_string()),
+                (".DvDRip".to_string(), "".to_string()),
+                ("-FxM".to_string(), "".to_string()),
+                ("720P".to_string(), "".to_string()),
+                ("MP3.MVGroup.org".to_string(), "".to_string()),
+                (".XviD".to_string(), "".to_string()),
+                (".PDTV".to_string(), "".to_string()),
+                ("NTSC".to_string(), "".to_string()),
+                ("DD5.1".to_string(), "".to_string()),
+                (" MMI".to_string(), "".to_string()),
+                
+                ("-NYDIC".to_string(), "".to_string()),
+                ("-LaUzu".to_string(), "".to_string()),
+                ("_8thSin".to_string(), "".to_string()),
+                (".hdrip".to_string(), "".to_string()),
+                (".HC".to_string(), "".to_string()),
+                ("SyMbIoTe".to_string(), "".to_string()),
+                ("[www.meWarez.org]".to_string(), "".to_string()),
+                ("Cronus".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
                 ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
-                ("".to_string(), "".to_string()),
+
+                
                 
             ],
             cant_enders : vec!
@@ -1102,6 +1148,7 @@ fn strip_unwanted(input : &str, mut is_dirty : bool, behaviors : &Behaviors ) ->
         for (needle,replacer) in &behaviors.character_behavior.replacer_chars {
             if needle == &c {
                 c = *replacer;
+                is_dirty = true;
                 break;
             }
         }
