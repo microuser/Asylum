@@ -251,7 +251,6 @@ impl FileSystemNode{
             FileSystemNode::Other(x) => x,
         }
     }
-    
 }
 
 
