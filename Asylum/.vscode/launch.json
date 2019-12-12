@@ -21,7 +21,7 @@
             },
             "args": [
                 //"-v", "--dryrun" , 
-                "/six8tb/RackCopy2019-12-05/Rack/RackMediaCinema-FailedProcess"],
+                "-v","/six8tb/RackCopy2019-12-05/Rack/RackMediaCinema-FailedProcess"],
             "cwd": "${workspaceFolder}"
         },
         {

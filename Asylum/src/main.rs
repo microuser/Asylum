@@ -151,14 +151,26 @@ impl StringEnumerated for String{
         }
     }
 }
-
+#[derive(Clone)]
 pub enum FileSystemNode{
     File(String),
     Folder(String),
     Other(String),
 }
 
+impl std::cmp::PartialEq for FileSystemNode {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self, &other) {
+            (&FileSystemNode::File(a), &FileSystemNode::File(b)) => a == b,
+            (&FileSystemNode::Folder(a), &FileSystemNode::Folder(b)) => a == b,
+            (&FileSystemNode::Other(a), &FileSystemNode::Other(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 impl FileSystemNode{
+    
     fn get_file_stem(path_buf : &PathBuf) -> FileSystemNode {
         if path_buf.is_dir() {
             FileSystemNode::Folder(
@@ -191,7 +203,7 @@ impl FileSystemNode{
     
     fn strip_enumeration(self : FileSystemNode, behaviors : &Behaviors) -> FileSystemNode{
         fn string_popper(haystack : &String, enumerate_character : char) -> String{
-            let mut has_seen_a_numeric = false;
+            let mut has_seen_only_numeric = false;
             let mut chars_to_delete = 0;
             let mut is_valid_sequence = false;
             let mut reverse_chars = haystack.chars().rev();
@@ -201,11 +213,11 @@ impl FileSystemNode{
                 match reverse_chars.next() {
                     Some(c) => {
                         if c.is_numeric(){
-                            has_seen_a_numeric = true;
+                            has_seen_only_numeric = true;
                             chars_to_delete += 1;
                             continue
                         } else if c == enumerate_character {
-                            if has_seen_a_numeric {
+                            if has_seen_only_numeric {
                                 //it isn't part of the special sequence, it is just a random underscore (enumerate char)
                                 is_valid_sequence = true;
                                 chars_to_delete += 1;
@@ -253,15 +265,37 @@ impl FileSystemNode{
     }
 }
 
+fn append_original_extension_if_file(from : &PathBuf, to_striped : &str) -> String {
+    if from.is_file(){
+        let extension = &from.extension().unwrap_or_default();
+        let period_extension = if extension.is_empty() {
+            "".to_string()
+        } else {
+            ".".to_string() + &extension.to_string_lossy()
+        };
+        //outcome + &period_extension
+        [to_striped, &period_extension].concat()
+    } else {
+        String::from(to_striped)
+    }
+}
 
 
 fn strip_unwanted_file_or_folder(path_buf : &PathBuf, behaviors: &Behaviors) {
     behaviors.print_debug(&format!("strip_unwanted: {}" , path_buf.display())); 
 
     let node : FileSystemNode  = FileSystemNode::get_file_stem(path_buf);
-    let node = node.strip_enumeration(behaviors).strip_enumeration(behaviors);
+    let potential_striped = node.clone().strip_enumeration(&behaviors);
+    //let potential_striped = potential_striped.strip_enumeration(&behaviors);
     
-    match strip_unwanted(node.unwrap(), &behaviors) {
+    //question this really looks like the wrong way to write it. I guess i'm just getting around being mutable
+    let (node, is_dirty) = if &potential_striped == &node {
+        (node, false)
+    } else {
+        (potential_striped, true)
+    };
+    
+    match strip_unwanted(node.unwrap(), is_dirty, &behaviors) {
         Changeable::Unchanged(_) => {
             behaviors.print_debug(&format!("Item unchanged: {}", path_buf.display()));
         },
@@ -270,22 +304,14 @@ fn strip_unwanted_file_or_folder(path_buf : &PathBuf, behaviors: &Behaviors) {
             //remove old filename
             after.pop(); 
             //add on new filename
-            if path_buf.is_dir() {
-                after.push(outcome);
+            after.push(append_original_extension_if_file(path_buf,&outcome));
+
+            if behaviors.application_behavior.dryrun {
+                behaviors.print_command("mv",&path_buf.to_string_lossy(),&after.to_string_lossy());           
             } else {
-                let extension = &path_buf.extension().unwrap_or_default();
-                let period_extension = if extension.is_empty() {
-                    "".to_string()
-                } else {
-                    ".".to_string() + &extension.to_string_lossy()
-                };
-                
-                after.push(outcome + &period_extension);
-            }
-            if !behaviors.application_behavior.dryrun {
                 move_path(&path_buf,&after,&behaviors);
             }
-            behaviors.print_command("mv",&path_buf.to_string_lossy(),&after.to_string_lossy());           
+            
         },
         Changeable::Annihilated() => {
             behaviors.print_error(&format!(
@@ -300,7 +326,8 @@ fn strip_unwanted_file_or_folder(path_buf : &PathBuf, behaviors: &Behaviors) {
 pub fn move_path(from: &PathBuf, to:&PathBuf, behavior: &Behaviors)  {
     let from_exist : bool = from.exists();
     let to_exist : bool = to.exists();
-    
+    //it is expected that it was already analysed that the filename actually did change,
+    //this if the two exists, it is a collision
     if from_exist && to_exist {
         match behavior.conflict_behavior.directory_conflict {
             DirectoryConflict::Enumerate => move_path_dir_to_dir_enumerate(from,to, behavior),
@@ -326,15 +353,24 @@ fn move_path_rename(from: &PathBuf, to: &PathBuf, behaviors: &Behaviors){
 }
 
 trait EnumPathBuf{
-    fn apply_enumerate_rules(&self, behavior : &Behaviors) -> PathBuf;
+    fn apply_enumerate_rules(&self, from: &PathBuf, behavior : &Behaviors) -> PathBuf;
 }
 
 impl EnumPathBuf for PathBuf{
-    fn apply_enumerate_rules(&self, behavior : &Behaviors) -> PathBuf{
+    //this counts down the enumerate to the lowest number
+
+    fn apply_enumerate_rules(&self, from : &PathBuf , behavior : &Behaviors) -> PathBuf{       
+        //looks like we need enumeration
         let mut path_buf = self.to_owned();
         let mut i : usize = 1;
         loop { 
             if ! path_buf.exists() { 
+                break;
+            }
+            //if it is itself, then retain our previous number
+            //this prevents thrashing/alternating between two numbers
+            //we need to know more, we need to know the from 
+            if from == &path_buf {
                 break;
             }
             
@@ -355,22 +391,27 @@ impl EnumPathBuf for PathBuf{
                     )
                 }
             );
-            i=i+1;
+            i+=1;
         };
         path_buf
     }
 }
 
 fn move_path_dir_to_dir_enumerate(from: &PathBuf, to:&PathBuf, behaviors: &Behaviors) {
-    let to = to.apply_enumerate_rules(behaviors);
-    match fs::rename(&from,&to){
-        Ok(()) => { 
-            behaviors.print_verbose(&format!("Enumerate Renamed: '{}' to '{}'", from.to_string_lossy(), to.to_string_lossy()));
-        }
-        Err(x) => { 
-            behaviors.print_error(&format!("Enumerate was unable to rename: '{}' '{}' : {}", &from.display(), &to.display(),x));
-        }
-    };
+    let to = to.apply_enumerate_rules(from, behaviors);
+    if from != &to {
+        match fs::rename(&from,&to){
+            Ok(()) => { 
+                behaviors.print_verbose(&format!("Enumerate Renamed: '{}' to '{}'", from.to_string_lossy(), to.to_string_lossy()));
+            }
+            Err(x) => { 
+                behaviors.print_error(&format!("Enumerate was unable to rename: '{}' '{}' : {}", &from.display(), &to.display(),x));
+            }
+        };
+    } else {
+        behaviors.print_debug(&format!("Enumerate retained the name : '{}'", from.to_string_lossy()));
+    }
+
 }
 
 fn move_path_dir_to_dir_merge(from: &PathBuf, to:&PathBuf, behaviors: &Behaviors)  {
@@ -464,14 +505,15 @@ impl Default for ConflictBehavior {
     fn default() -> ConflictBehavior {
         ConflictBehavior {
             directory_conflict : DirectoryConflict::Enumerate,
-            enumerate_folder_character : ' ', //TODO FIX to be _
-            enumerate_file_character : ' '
+            enumerate_folder_character : '_', //TODO FIX to be _
+            enumerate_file_character : '_'
         }
     }
 }
 
 #[derive(Debug)]
 pub struct CharacterBehavior {
+    pub cant_beginners : Vec<char>,
     pub white_list : Vec<char>,
     pub black_list : Vec<char>,
     //pub replacement : char,
@@ -494,6 +536,14 @@ impl CharacterBehavior {
 impl Default for CharacterBehavior {
     fn default() -> CharacterBehavior {
         CharacterBehavior {
+            //cant beginners mean that a filename can't begin with this, 
+            //this character must be in the whitelist
+            //it also means that when multiple of them are reached, they collapse into 1
+            //they are also equivilant to eachother, so " 1 __ " becomres "1 " while " 1_  _" becomes "1_"
+            cant_beginners : vec!
+            [
+                ' ','_'
+            ],
             white_list : vec!
             [
                 'a','A',
@@ -893,8 +943,7 @@ impl Default for CharacterBehavior {
             ],
             cant_enders : vec!
             [
-                '.',
-                ' '
+                '.',' '
             ],
         }
     }
@@ -1019,10 +1068,10 @@ impl Default for Behaviors {
 
 
 //one part of a path, not the whole path
-fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
+fn strip_unwanted(input : &str, mut is_dirty : bool, behaviors : &Behaviors ) -> Changeable {
     let mut input = input.to_owned();
     let mut buffer = String::with_capacity(input.len());
-    let mut is_dirty : bool = false;
+    //let mut is_dirty : bool = false;
 
     let is_hidden : bool = &input[..1] == ".";
     if is_hidden {
@@ -1032,16 +1081,23 @@ fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
 
     for replacer in &behaviors.character_behavior.replacer_strings {
         if input.find(&replacer.0).is_some() {
-            input = input.replace(
+//            let potentialChange = &input.clone();
+            let potential_change = input.replace(
                 &replacer.0,
                 &replacer.1,
             );
-            is_dirty = true;
+            //This prevents blank entries from messing up everything
+            if potential_change != input {
+                is_dirty = true;
+                input = potential_change;
+            }
         }
     }
     //whenever you push a character, don't push two spaces in a row
-    let mut last_push_was_space : bool = false;
+    //this starting condition prevents a space from starting
+    let mut last_push_was_cant_beginner : bool = true;
     for mut c in input.chars() {
+
         //pre-process characters and replace over c if key matches
         for (needle,replacer) in &behaviors.character_behavior.replacer_chars {
             if needle == &c {
@@ -1056,12 +1112,13 @@ fn strip_unwanted(input : &str, behaviors : &Behaviors ) -> Changeable {
         } else if behaviors.character_behavior.white_list.contains(&c) {
             //keep because it is in white list
             //prevent writing two spaces in a row
-            if ! (last_push_was_space && c == ' ')  {
-                buffer.push(c); 
-                last_push_was_space = c == ' ' ;
-            } else {
+            let cant_begin_or_cant_consecutave = behaviors.character_behavior.cant_beginners.contains(&c);
+            if last_push_was_cant_beginner && cant_begin_or_cant_consecutave  {
                 //mark dirty since we didn't push
                 is_dirty = true;
+            } else {
+                buffer.push(c); 
+                last_push_was_cant_beginner = cant_begin_or_cant_consecutave ;                
             }
             
             
