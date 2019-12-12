@@ -190,28 +190,35 @@ impl FileSystemNode{
     }
     
     fn strip_enumeration(self : FileSystemNode, behaviors : &Behaviors) -> FileSystemNode{
-        fn string_popper(mut haystack : String, enumerate_character : char) -> String{
+        fn string_popper(haystack : &String, enumerate_character : char) -> String{
             let mut has_seen_a_numeric = false;
+            let mut chars_to_delete = 0;
+            let mut is_valid_sequence = false;
+            let mut reverse_chars = haystack.chars().rev();
             //let mut chars_to_remove : usize = 0;
             loop {
                 //pop starts from the end
-                match haystack.pop() {
+                match reverse_chars.next() {
                     Some(c) => {
                         if c.is_numeric(){
                             has_seen_a_numeric = true;
+                            chars_to_delete += 1;
                             continue
                         } else if c == enumerate_character {
-                            if ! has_seen_a_numeric {
+                            if has_seen_a_numeric {
                                 //it isn't part of the special sequence, it is just a random underscore (enumerate char)
-                                haystack.push(c);
+                                is_valid_sequence = true;
+                                chars_to_delete += 1;
+                            } else {
+                                is_valid_sequence = false;
+                                chars_to_delete = 0;
                             }
-                            //we know it is the perfect sequence when it ends in the right character
-                            //we break out, cause we are done
                             break;
                         } else {
                             //if we dont find the perfect sequence by finding an unexpected character, then it is not the right type of ending, 
                             //we reset chars to remove, so that the slice later will be the whole string
-                            haystack.push(c);
+                            is_valid_sequence = false;
+                            chars_to_delete = 0;
                             break;
                         }
                     },
@@ -220,14 +227,19 @@ impl FileSystemNode{
                     }
                 };
             };
-            haystack
+            if is_valid_sequence {
+                String::from(&haystack[..haystack.len()-chars_to_delete])
+            } else {
+                String::from(haystack)
+            }
+            
         };
         
         //Question, it seems i have an issue of needing mutable, but yet returning a newly created. Why can't i just mutable inplace?
         return match self {
-            FileSystemNode::File(x) => FileSystemNode::File(string_popper(x, behaviors.conflict_behavior.enumerate_file_character)),
-            FileSystemNode::Folder(x) =>  FileSystemNode::Folder(string_popper(x, behaviors.conflict_behavior.enumerate_folder_character)),
-            FileSystemNode::Other(x) => FileSystemNode::Other(string_popper(x, behaviors.conflict_behavior.enumerate_file_character)),
+            FileSystemNode::File(x) => FileSystemNode::File(string_popper(&x, behaviors.conflict_behavior.enumerate_file_character)),
+            FileSystemNode::Folder(x) =>  FileSystemNode::Folder(string_popper(&x, behaviors.conflict_behavior.enumerate_folder_character)),
+            FileSystemNode::Other(x) => FileSystemNode::Other(string_popper(&x, behaviors.conflict_behavior.enumerate_file_character)),
         }
         
     }
@@ -247,7 +259,7 @@ fn strip_unwanted_file_or_folder(path_buf : &PathBuf, behaviors: &Behaviors) {
     behaviors.print_debug(&format!("strip_unwanted: {}" , path_buf.display())); 
 
     let node : FileSystemNode  = FileSystemNode::get_file_stem(path_buf);
-    let node = node.strip_enumeration(behaviors);
+    let node = node.strip_enumeration(behaviors).strip_enumeration(behaviors);
     
     match strip_unwanted(node.unwrap(), &behaviors) {
         Changeable::Unchanged(_) => {
@@ -452,8 +464,8 @@ impl Default for ConflictBehavior {
     fn default() -> ConflictBehavior {
         ConflictBehavior {
             directory_conflict : DirectoryConflict::Enumerate,
-            enumerate_folder_character : '_',
-            enumerate_file_character : '_'
+            enumerate_folder_character : ' ', //TODO FIX to be _
+            enumerate_file_character : ' '
         }
     }
 }
