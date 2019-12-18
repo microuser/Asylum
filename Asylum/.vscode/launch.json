@@ -40,7 +40,7 @@
                     "kind": "bin"
                 }
             },
-            "args": ["-vv", "--folderize" ,"/six8tb/RackCopy2019-12-05/Rack/RackMediaCinema (copy)"],
+            "args": ["-vv", "--folderize" ,"<Place your path here>"],
             "cwd": "${workspaceFolder}"
         }
     ]
