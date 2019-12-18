@@ -4,23 +4,36 @@ use std::fs::{self};
 use std::path::PathBuf;
 use clap::App;
 use clap::Arg;
+use clap::SubCommand;
+use clap::AppSettings;
 
 
 //use clap::SubCommand;
 
 fn main() {
-
     let cli_args : clap::ArgMatches = App::new("Asylum")
     .version("1.0")
     .author("Microuser <microuser@users.noreply.github.com>")
     .about("Sanitizes files and folders names")
     .arg(Arg::with_name("path")
-        .long("path")
-        .short("p")
-        .help("path of files or folders to clean")
-        //.required(true)
-        .index(1)
-        .multiple(true)
+            .long("path")
+            .short("p")
+            .help("path of files or folders to clean")
+            //.required(true)
+            .index(1)
+            .multiple(true)
+            //.takes_value(true)
+            //.value_name("paths")
+    )
+    .arg(Arg::with_name("no-clean")
+        .long("no-clean")
+        .help("do not perform saniztizing actions to clean up filenames")
+        .multiple(false)
+    )
+    .arg(Arg::with_name("folderize")
+        .long("folderize")
+        .help("For each path specified, place the files in subdirectories named after the file")
+        .multiple(false)
     )
     .arg(Arg::with_name("dryrun")
         .long("dryrun")
@@ -34,12 +47,6 @@ fn main() {
         .short("v")
         .multiple(true)
     )
-    .arg(Arg::with_name("profile")
-        .help("A profile for groupings of settings for specific situations")
-        .long("profile")
-        .short("g")
-        .multiple(false)
-    )
     .arg(Arg::with_name("colors")
         .help("Show from -> to in different colors in terminal std-out")
         .long("colors")
@@ -50,27 +57,124 @@ fn main() {
         .long("no-colors")
     )
     .get_matches();
-
+    
     let behaviors = Behaviors::from_args(&cli_args);
 
     behaviors.print_verbose(&format!("Starting Asylum with arguments: {:#?}",&cli_args));
     behaviors.print_debug(&format!("Using Application Behaviors: {:#?}",&behaviors));
     
+    let should_clean = cli_args.occurrences_of("no-clean") == 0;
+    let should_folderize = cli_args.occurrences_of("folderize") > 0 ;
+
+    if (!should_clean) && (!should_folderize){
+        behaviors.print_error("Missing action to perform. See --help");
+        std::process::exit(1);
+    }
+
     if cli_args.occurrences_of("path") > 0 {   
+ 
         let paths = cli_args.values_of("path").expect("expected content for path").map(|path_string| PathBuf::from(path_string));
+       
         for path in paths {
-            visit_dirs_sorted(
-                &path.to_path_buf(), 
-                &|file_or_dir| {
-                    behaviors.print_debug(&format!("Running Callback for: {:?}",file_or_dir));
-                    strip_unwanted_file_or_folder(file_or_dir, &behaviors);
-                },
-                &behaviors
-            );  
+            behaviors.print_debug(&format!("Processing path from arguemnt: {}", path.display()));
+
+            if should_clean {
+                visit_dirs_sorted(
+                    &path.to_path_buf(), 
+                    &|file_or_dir| {
+                        behaviors.print_debug(&format!("Running Callback for for clean on: {:?}",file_or_dir));
+                        strip_unwanted_file_or_folder(file_or_dir, &behaviors);
+                    },
+                    &behaviors
+                );  
+            }
+
+            if should_folderize {
+                visit_files_sorted(
+                    &path.to_path_buf(),
+                    &|file_or_dir| {
+                        behaviors.print_debug(&format!("Running Callback for folderize on: {:?}", file_or_dir));
+                        move_file_into_same_named_folder(file_or_dir, &behaviors);
+                    },
+                    &behaviors
+                );
+            }
         }
     } else {
         behaviors.print_error(&format!("Missing path was specified. See --help"));
         std::process::exit(1);
+    }
+    
+}
+
+
+
+fn move_file_into_same_named_folder(file_to_move: &PathBuf, behaviors: &Behaviors ) {
+    //overview:
+    //create folder first.
+    //try to rename using behavior rules (enumerate?)
+    //move file into folder
+
+    let mut folder_to_create : PathBuf = PathBuf::from(file_to_move); 
+
+    match file_to_move.file_stem() {
+        Some(potential_folder) => {
+            //find foldername
+            folder_to_create.set_file_name(
+                potential_folder
+                .to_string_lossy()
+                .to_string()
+                .trim_enumerate_folder(&behaviors)
+            );
+            folder_to_create.strip_and_enumerate_dir_to_lowest(behaviors);
+
+            //create folder
+            match std::fs::create_dir(&folder_to_create) {
+                Err(_) => {
+                    behaviors.print_error(&format!("Error! Unable to create folder: {}",folder_to_create.display()));
+                }
+                _ => ()
+            };
+            
+            //find path of file with new folder name
+            let mut file_destination : PathBuf = PathBuf::from(&folder_to_create);
+            file_destination.push(&file_to_move.file_name().expect(&format!("Expected a filename to place into the newly created directory: {}",file_to_move.display())));
+            
+            //move file into new folder
+            move_path(&file_to_move, &file_destination, behaviors);
+
+            //cleanup that edge case where the file has no extension and is the same name as the folder, so it enumerated
+            if &potential_folder != &folder_to_create.file_name().expect("expected ability to get filename") {
+                let folder_unduely_enumerated = PathBuf::from(&folder_to_create);
+                folder_to_create.strip_and_enumerate_dir_to_lowest(behaviors);
+                move_path(&folder_unduely_enumerated, &folder_to_create, behaviors);
+            }
+
+        },
+        _ => behaviors.print_error(&format!("Could not determine foldername to create from file: {}", file_to_move.display())),
+    }
+
+}
+
+
+fn visit_files_sorted(dir : &PathBuf, callback: &dyn Fn(&PathBuf), behaviors : &Behaviors) {
+    if dir.is_dir(){
+        let mut entries : Vec<PathBuf> = fs::read_dir(dir)
+            .expect(&format!("can not read directory: {}", dir.display()))
+            .filter(Result::is_ok)
+            .map(|e| e.unwrap().path())
+            .filter(|e| e.is_file())
+            .collect();
+        entries.sort();
+    
+        behaviors.print_debug(&format!("We found ({}) files in directory: {}", entries.len(),dir.display()));
+            
+        for entry in entries {
+            if entry.is_file() {
+                behaviors.print_debug(&format!("To callback file : {}", entry.display()));
+                callback(&entry);
+            }
+        }
     }
 
 }
@@ -93,10 +197,13 @@ fn visit_dirs_sorted(dir: &PathBuf, callback: &dyn Fn(&PathBuf), behaviors : &Be
                 visit_dirs_sorted(&entry, callback, behaviors);
                 callback(&entry);
             } else {
-                behaviors.print_debug(&format!("to analyse {}: {}", if entry.is_dir() {"folder"} else {"file"}  , entry.display()));
+                behaviors.print_debug(&format!("To callback {}: {}", if entry.is_dir() {"folder"} else {"file"}  , entry.display()));
                 callback(&entry);
             }
         }
+        //note: this does not run for the directory provided itself
+        //if in the future we want to add this ability, we would need to mutate the pathBuf given, 
+        //complexity since more than one command can be ran 
     } else {
         behaviors.print_error(&format!("The directory does not exist: {}" , dir.display()));
     }
@@ -108,9 +215,6 @@ trait StringEnumerated{
 }
 
 impl StringEnumerated for String{
-
-    
-
     fn trim_enumerate_folder(&self, behavior: &Behaviors) -> String{
         if self.len() <= 4 {
             return String::from(self)
@@ -354,11 +458,58 @@ fn move_path_rename(from: &PathBuf, to: &PathBuf, behaviors: &Behaviors){
 
 trait EnumPathBuf{
     fn apply_enumerate_rules(&self, from: &PathBuf, behavior : &Behaviors) -> PathBuf;
+    fn strip_and_enumerate_dir_to_lowest(&mut self, behavior: &Behaviors);
 }
 
 impl EnumPathBuf for PathBuf{
-    //this counts down the enumerate to the lowest number
 
+
+fn strip_and_enumerate_dir_to_lowest(&mut  self , behaviors : &Behaviors) {
+    let mut i : usize = 0;
+
+    let mut folder_no_enumeration = match self.file_name() {
+        Some(x) => {
+            x
+            .to_string_lossy()
+            .to_string()
+            .trim_enumerate_folder(&behaviors)
+        },
+        None => {
+            match self.file_stem() {
+                Some(y) => {
+                    y
+                    .to_string_lossy()
+                    .to_string()
+                    .trim_enumerate_folder(&behaviors)
+                }
+                None => {
+                    behaviors.print_error("Error. Can not find the filename or filestem of the path");
+                    return ;
+                    //do nothing, allow double enumeration if random situation occurs}
+                },
+            }
+        }
+    };
+    self.set_file_name(&folder_no_enumeration);
+    loop {
+        if ! self.exists() {
+            break;
+        } 
+        i+=1;
+        self.set_file_name(
+            format!(
+                "{}{}{:03}",
+                folder_no_enumeration,
+                behaviors.conflict_behavior.enumerate_folder_character, 
+                i
+            )
+        );
+        
+    };
+}
+
+
+    //this counts down the enumerate to the lowest number
     fn apply_enumerate_rules(&self, from : &PathBuf , behavior : &Behaviors) -> PathBuf{       
         //looks like we need enumeration
         let mut path_buf = self.to_owned();
